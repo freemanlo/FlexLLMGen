@@ -1,4 +1,3 @@
-"""
 Summary of Phi-4 Support Implementation for FlexLLMGen
 ======================================================
 
