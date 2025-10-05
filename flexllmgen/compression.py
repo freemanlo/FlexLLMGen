@@ -334,7 +334,7 @@ def compress_and_decompress(tensor, config):
 
 def test_simulated_compression():
     torch.manual_seed(0)
-    a = torch.normal(0, 1, (64, 64, 64), dtype=torch.float16).cuda()
+    a = torch.normal(0, 1, (64, 64, 64), dtype=torch.float16).xpu()
 
     config = CompressionConfig(
         num_bits=4, group_size=32, group_dim=0, symmetric=False)
@@ -346,11 +346,11 @@ def test_simulated_compression():
 
 def test_real_compression():
     torch.manual_seed(0)
-    a = torch.normal(0, 1, (32, 1, 1), dtype=torch.float16).cuda()
+    a = torch.normal(0, 1, (32, 1, 1), dtype=torch.float16).xpu()
 
     config = CompressionConfig(
         num_bits=4, group_size=32, group_dim=0, symmetric=False)
-    dev = TorchDevice("cuda:0", 0, 0).compressed_device
+    dev = TorchDevice("xpu:0", 0, 0).compressed_device
     packed = dev.compress(a, config)
     b = dev.decompress(packed)
 

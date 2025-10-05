@@ -43,7 +43,7 @@ class ExecutionEnv:
     def create(cls, offload_dir):
         # fix recursive import
         from flexllmgen.pytorch_backend import TorchDevice, TorchDisk, TorchMixedDevice
-        gpu = TorchDevice("cuda:0")
+        gpu = TorchDevice("xpu:0")
         cpu = TorchDevice("cpu")
         disk = TorchDisk(offload_dir)
         return cls(gpu=gpu, cpu=cpu, disk=disk, mixed=TorchMixedDevice([gpu, cpu, disk]))
@@ -122,7 +122,7 @@ def sample_from_range(n, k):
 
 def cpu_mem_stats():
     objects = gc.get_objects()
-    tensors = [obj for obj in objects if torch.is_tensor(obj) and not obj.is_cuda]
+    tensors = [obj for obj in objects if torch.is_tensor(obj) and not obj.is_xpu]
 
     total_numel = 0
     total_mem = 0
@@ -145,7 +145,7 @@ def cpu_mem_stats():
 
 def torch_mem_stats():
     objects = gc.get_objects()
-    tensors = [obj for obj in objects if torch.is_tensor(obj) and obj.is_cuda]
+    tensors = [obj for obj in objects if torch.is_tensor(obj) and obj.is_xpu]
 
     total_numel = 0
     total_mem = 0

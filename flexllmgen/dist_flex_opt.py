@@ -76,10 +76,10 @@ class DistOptLM(OptLM):
         else:
             raise NotImplementedError()
 
-        # CUDA streams
-        self.load_weight_stream = torch.cuda.Stream()
-        self.load_cache_stream = torch.cuda.Stream()
-        self.store_cache_stream = torch.cuda.Stream()
+        # XPU streams
+        self.load_weight_stream = torch.xpu.Stream()
+        self.load_cache_stream = torch.xpu.Stream()
+        self.store_cache_stream = torch.xpu.Stream()
 
         self.task = None
         self.init_all_weights()
@@ -99,7 +99,7 @@ class DistOptLM(OptLM):
             return
 
         # Load from weight_home to weight_read_buf
-        with torch.cuda.stream(self.load_weight_stream):
+        with torch.xpu.stream(self.load_weight_stream):
             self.layers[j].load_weight(self.weight_home[j], self.weight_read_buf[j], k)
 
     def init_cache(self, t, j, k):
@@ -120,7 +120,7 @@ class DistOptLM(OptLM):
             return
 
         # Load from cache_home to cache_read_buf
-        with torch.cuda.stream(self.load_cache_stream):
+        with torch.xpu.stream(self.load_cache_stream):
             self.layers[j].load_cache(self.cache_home[t][j][k], self.cache_read_buf[t][j][k], i)
 
     def store_cache(self, t, i, j, k):
@@ -139,7 +139,7 @@ class DistOptLM(OptLM):
 
         # Store cache_write_buf to cache_home
         # Delete cache_write_buf
-        with torch.cuda.stream(self.store_cache_stream):
+        with torch.xpu.stream(self.store_cache_stream):
             self.layers[j].store_cache(self.cache_home[t][j][k], self.cache_write_buf[t][j][k], i)
 
     def delete_cache(self, t, j, k):
@@ -547,7 +547,7 @@ def run_flexllmgen_dist(args):
     warmup_inputs = get_test_inputs(32, num_prompts, tokenizer)
     inputs = get_test_inputs(prompt_len, num_prompts, tokenizer)
 
-    gpu = TorchDevice(f"cuda:{args.local_rank}")
+    gpu = TorchDevice(f"xpu:{args.local_rank}")
     cpu = TorchDevice("cpu")
     disk = TorchDisk(args.offload_dir, None, args.local_rank)
     env = ExecutionEnv(gpu=gpu, cpu=cpu, disk=disk, mixed=TorchMixedDevice([gpu, cpu, disk]))

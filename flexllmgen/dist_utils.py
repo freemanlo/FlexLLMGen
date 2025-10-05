@@ -11,7 +11,7 @@ def initialize_distributed(head_ip, port, world_size, rank, local_rank,
           f'world_size={world_size}, rank={rank}, local_rank={local_rank}.')
 
     # Initialize distributed environment
-    torch.cuda.set_device(local_rank)
+    torch.xpu.set_device(local_rank)
     distributed_init_method = f'tcp://{head_ip}:{port}'
     global _COMM_DEVICE
     _COMM_DEVICE = comm_device

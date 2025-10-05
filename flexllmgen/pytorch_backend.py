@@ -31,7 +31,7 @@ def fix_recursive_import():
 
 class DeviceType(Enum):
     CPU = auto()
-    CUDA = auto()
+    XPU = auto()
     DISK = auto()
     MIXED = auto()
     COMPRESSED = auto()
@@ -40,8 +40,8 @@ class DeviceType(Enum):
     def convert(name):
         if name == "cpu":
             return DeviceType.CPU
-        elif name == "cuda":
-            return DeviceType.CUDA
+        elif name == "xpu":
+            return DeviceType.XPU
         elif name == "disk":
             return DeviceType.DISK
         elif name == "mixed":
@@ -416,14 +416,14 @@ class TorchDevice:
                 # shape: (b * n_head, s, head_dim)
                 v = v.permute(1, 0, 2).reshape(b * n_head, src_s, head_dim)
 
-                if k.is_cuda:
+                if k.is_xpu:
                     value = self._attention_value(q, k, v, attention_mask.data,
                         b, src_s, tgt_s, n_head, head_dim)
                 else:
                     q = q.float().cpu()
                     k, v = k.float(), v.float()
                     value = self._attention_value(q, k, v, attention_mask.data,
-                        b, src_s, tgt_s, n_head, head_dim).cuda().half()
+                        b, src_s, tgt_s, n_head, head_dim).xpu().half()
             else:  # Sparse attention
                 # shape: (s, b * n_head, head_dim)
                 k = k_cache.data[:src_s]
@@ -431,7 +431,7 @@ class TorchDevice:
                 # shape: (b * n_head, head_dim, s)
                 k = k.permute(1, 2, 0).reshape(b * n_head, head_dim, src_s)
 
-                if k.is_cuda:
+                if k.is_xpu:
                     value = self._sparse_attention_value(q, k, v_new, v_cache,
                         attention_mask.data, b, src_s, tgt_s, n_head, head_dim,
                         attn_sparsity)
@@ -439,7 +439,7 @@ class TorchDevice:
                     q = q.float().cpu()
                     value = self._sparse_attention_value(q, k, v_new, v_cache,
                         attention_mask.data, b, src_s, tgt_s, n_head, head_dim,
-                        attn_sparsity).cuda().half()
+                        attn_sparsity).xpu().half()
         else:  # Mixed device attention
             assert attn_sparsity >= 1.0
             value = self._mixed_device_attention(q, k_cache, v_cache,
@@ -498,7 +498,7 @@ class TorchDevice:
         attn_weights = torch.cat([topk_weights,
             attn_weights[:, :, -1].unsqueeze(-1)], dim=-1)
 
-        if k.is_cuda:
+        if k.is_xpu:
             v_home = v_cache
             v_buf = self.allocate((topk+1, b*n_head, head_dim), np.float16)
             topk_indices = topk_indices.cpu()
@@ -542,7 +542,7 @@ class TorchDevice:
         # shape: (b * n_head, s, head_dim)
         v_gpu = v_gpu.permute(1, 0, 2)
 
-        mask_gpu = mask[:b_gpu].cuda()
+        mask_gpu = mask[:b_gpu].xpu()
         value_gpu = self._attention_value(q_gpu, k_gpu, v_gpu, mask_gpu,
             b_gpu, src_s, tgt_s, n_head, head_dim)
 
@@ -563,7 +563,7 @@ class TorchDevice:
         value_cpu = self._attention_value(q_cpu, k_cpu, v_cpu, mask_cpu,
             b_cpu, src_s, tgt_s, n_head, head_dim)
 
-        value = torch.cat([value_gpu, value_cpu.cuda().half()], dim=0)
+        value = torch.cat([value_gpu, value_cpu.xpu().half()], dim=0)
         return value
 
     def mlp(self, inputs, wi, bi, wo, bo, w_ln, b_ln, donate):
@@ -584,12 +584,12 @@ class TorchDevice:
         return TorchTensor.create_from_torch(out, self)
 
     def synchronize(self):
-        torch.cuda.synchronize()
+        torch.xpu.synchronize()
 
     def mem_stats(self):
-        if self.device_type == DeviceType.CUDA:
-            cur_mem = torch.cuda.memory_allocated(self.dev)
-            peak_mem = torch.cuda.max_memory_allocated(self.dev)
+        if self.device_type == DeviceType.XPU:
+            cur_mem = torch.xpu.memory_allocated(self.dev)
+            peak_mem = torch.xpu.max_memory_allocated(self.dev)
         elif self.device_type == DeviceType.CPU:
             cur_mem = cpu_mem_stats()
             peak_mem = 0
@@ -599,7 +599,7 @@ class TorchDevice:
         return cur_mem, peak_mem
 
     def print_stats(self, output_file=None):
-        torch.cuda.synchronize()
+        torch.xpu.synchronize()
         cur_mem, peak_mem = self.mem_stats()
 
         if output_file is not None:
@@ -621,7 +621,7 @@ class TorchDevice:
 class TorchDisk:
     """Manage tensors stored on a disk."""
 
-    def __init__(self, path, mem_capacity=None, cuda_id=0, num_copy_threads=4):
+    def __init__(self, path, mem_capacity=None, xpu_id=0, num_copy_threads=4):
         self.name = path
         self.path = os.path.abspath(os.path.expanduser(path))
         self.mem_capacity = mem_capacity
@@ -640,7 +640,7 @@ class TorchDisk:
         self.copy_queue = queue.Queue()
         self.copy_threads = [
             threading.Thread(
-                target=copy_worker_func, args=(self.copy_queue, cuda_id)
+                target=copy_worker_func, args=(self.copy_queue, xpu_id)
             ) for _ in range(num_copy_threads)
         ]
         for t in self.copy_threads:
@@ -794,7 +794,7 @@ def general_copy(dst: TorchTensor, dst_indices: Tuple[slice],
     It is equivalent to `dst[dst_indices] = src[src_indices]` in numpy syntax.
     The copy is asynchronous. To wait for the copy to complete, you need to call
     >>> env.disk.synchronize()
-    >>> torch.cuda.synchronize()
+    >>> torch.xpu.synchronize()
     """
     if dst.device.device_type == DeviceType.MIXED:
         # The tensor is on mixed devices, do recursive calls
@@ -834,14 +834,14 @@ def general_copy(dst: TorchTensor, dst_indices: Tuple[slice],
     elif dst.device.device_type == DeviceType.DISK:
         # The tensor is on the disk, dispatch to copy threads for asynchronous copy
         dst.device.submit_copy(dst, dst_indices, src, src_indices)
-    elif (src.device.device_type == DeviceType.CUDA and
+    elif (src.device.device_type == DeviceType.XPU and
           dst.device.device_type == DeviceType.CPU and
           not dst.data.is_pinned() and src.shape[0] > 1):
         # The cpu tensor is not pinned, dispatch to copy threads and use pin_memory
         # as a relay
         global_disk_device.submit_copy(dst, dst_indices, src, src_indices)
     elif (src.device.device_type == DeviceType.CPU and
-          dst.device.device_type == DeviceType.CUDA and
+          dst.device.device_type == DeviceType.XPU and
           not src.data.is_pinned()):
         # The cpu tensor is not pinned, use pin_memory as a relay
         src = src.data[src_indices] if src_indices else src.data
@@ -875,14 +875,14 @@ def map_to_torch_tensor(tensor, indices):
     return data[indices] if indices else data
 
 
-def copy_worker_func(queue, cuda_id):
+def copy_worker_func(queue, xpu_id):
     """The copy worker thread."""
-    torch.cuda.set_device(cuda_id)
+    torch.xpu.set_device(xpu_id)
 
     cpu_buf = torch.empty((1 * GB,), dtype=torch.float16, pin_memory=True)
-    copy_stream = torch.cuda.Stream()
+    copy_stream = torch.xpu.Stream()
 
-    with torch.cuda.stream(copy_stream):
+    with torch.xpu.stream(copy_stream):
         while True:
             item = queue.get()
             if item is None:
@@ -893,8 +893,8 @@ def copy_worker_func(queue, cuda_id):
             src_data = map_to_torch_tensor(src, src_indices)
             dst_data = map_to_torch_tensor(dst, dst_indices)
 
-            if (src.device.device_type == DeviceType.CUDA or
-                dst.device.device_type == DeviceType.CUDA):
+            if (src.device.device_type == DeviceType.XPU or
+                dst.device.device_type == DeviceType.XPU):
                 # Use a pinned cpu buffer as a relay
                 size = np.prod(src_data.shape)
                 tmp_cpu_buf = cpu_buf[:size].view(src_data.shape)

@@ -42,7 +42,7 @@ def profile_bandwidth(path):
             if dst == "cpu":
                 dst_tensor = torch.ones((b, s, h), dtype=torch.int8, pin_memory=True)
             elif dst == "gpu":
-                dst_tensor = torch.ones((b, s, h), dtype=torch.int8, device="cuda:0")
+                dst_tensor = torch.ones((b, s, h), dtype=torch.int8, device="xpu:0")
             elif dst == "disk":
                 np.lib.format.open_memmap(path, mode="w+", shape=((b,s,h)), dtype=np.int8)
                 dst_tensor = path
@@ -50,7 +50,7 @@ def profile_bandwidth(path):
             if src == "cpu":
                 src_tensor = torch.ones((b, s, h), dtype=torch.int8, pin_memory=True)
             elif src == "gpu":
-                src_tensor = torch.ones((b, s, h), dtype=torch.int8, device="cuda:0")
+                src_tensor = torch.ones((b, s, h), dtype=torch.int8, device="xpu:0")
             elif src == "disk":
                 np.lib.format.open_memmap(path, mode="w+", shape=((b,s,h)), dtype=np.int8)
                 src_tensor = path

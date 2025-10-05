@@ -1,6 +1,10 @@
 """
 Usage:
 python3 -m flexllmgen.flex_opt --model facebook/opt-1.3b --gpu-batch-size 32 --percent 100 0 100 0 100 0
+
+Note: This version uses Intel XPU instead of CUDA. 
+Requires Intel Extension for PyTorch (IPEX) to be installed.
+Install with: pip install intel-extension-for-pytorch
 """
 
 import argparse
@@ -614,10 +618,10 @@ class OptLM:
         else:
             raise NotImplementedError()
 
-        # CUDA streams
-        self.load_weight_stream = torch.cuda.Stream()
-        self.load_cache_stream = torch.cuda.Stream()
-        self.store_cache_stream = torch.cuda.Stream()
+        # XPU streams
+        self.load_weight_stream = torch.xpu.Stream()
+        self.load_cache_stream = torch.xpu.Stream()
+        self.store_cache_stream = torch.xpu.Stream()
 
         # Intermediate tensors
         # The following buffers store values used
@@ -660,7 +664,7 @@ class OptLM:
 
         # Load from weight_home to weight_read_buf
         if overlap:
-            with torch.cuda.stream(self.load_weight_stream):
+            with torch.xpu.stream(self.load_weight_stream):
                 self.layers[j].load_weight(self.weight_home[j], self.weight_read_buf[j], k)
         else:
             self.layers[j].load_weight(self.weight_home[j], self.weight_read_buf[j], k)
@@ -692,7 +696,7 @@ class OptLM:
 
         # Load from cache_home to cache_read_buf
         if overlap:
-            with torch.cuda.stream(self.load_cache_stream):
+            with torch.xpu.stream(self.load_cache_stream):
                 self.layers[j].load_cache(self.cache_home[j][k], self.cache_read_buf[j][k], i)
         else:
             self.layers[j].load_cache(self.cache_home[j][k], self.cache_read_buf[j][k], i)
@@ -714,7 +718,7 @@ class OptLM:
         # Store cache_write_buf to cache_home
         # Delete cache_write_buf
         if overlap:
-            with torch.cuda.stream(self.store_cache_stream):
+            with torch.xpu.stream(self.store_cache_stream):
                 self.layers[j].store_cache(self.cache_home[j][k], self.cache_write_buf[j][k], i)
         else:
             self.layers[j].store_cache(self.cache_home[j][k], self.cache_write_buf[j][k], i)
@@ -792,7 +796,7 @@ class OptLM:
 
     def sync(self):
         self.env.disk.synchronize()
-        torch.cuda.synchronize()
+        torch.xpu.synchronize()
 
     def init_all_weights(self):
         self.weight_home = array_1d(self.num_layers, ValueHolder)
@@ -1189,7 +1193,7 @@ def run_flexllmgen(args):
     warmup_inputs = get_test_inputs(32, num_prompts, tokenizer)
     inputs = get_test_inputs(prompt_len, num_prompts, tokenizer)
 
-    gpu = TorchDevice("cuda:0")
+    gpu = TorchDevice("xpu:0")
     cpu = TorchDevice("cpu")
     disk = TorchDisk(args.offload_dir)
     env = ExecutionEnv(gpu=gpu, cpu=cpu, disk=disk, mixed=TorchMixedDevice([gpu, cpu, disk]))
@@ -1233,7 +1237,7 @@ def run_flexllmgen(args):
         env.close_copy_threads()
 
     # Log output
-    prefill_latency = costs[0]
+    prefill_latency = costs[0] # Time for the first iteration (i = 0), This represents processing the entire input prompt at once. Subsequent costs[1:] are decode latencies for individual token generation
     prefill_throughput = num_prompts * prompt_len / prefill_latency
     if cut_gen_len:  # project latency of cut_gen_len to gen_len
         decode_latency = project_decode_latency(costs, prompt_len, gen_len)
@@ -1324,4 +1328,9 @@ if __name__ == "__main__":
 
     assert len(args.percent) == 6
 
+    print(f"XPU available: {torch.xpu.is_available()}")
+    print(f"XPU device count: {torch.xpu.device_count()}")
+    if torch.xpu.is_available():
+        print(f"XPU memory: {torch.xpu.get_device_properties(0)}")
+        
     run_flexllmgen(args)
