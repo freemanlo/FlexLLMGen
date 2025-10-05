@@ -28,6 +28,22 @@ Check out the [examples](#examples) of what you can run on a single commodity GP
 FlexLLMGen can be significantly slower than the case when you have enough powerful GPUs to hold the whole model, especially for small-batch cases.
 FlexLLMGen is mostly optimized for throughput-oriented batch processing settings (e.g., classifying or extracting information from many documents in batches), on single GPUs.
 
+## ✨ Intel XPU Support
+
+FlexLLMGen now supports **Intel XPU (GPU) devices** for accelerated inference! This implementation provides:
+
+- **Automatic Hardware Detection**: Seamlessly detects and utilizes Intel XPU when available
+- **Memory Management**: Full support for Intel XPU memory allocation and optimization
+- **Stream Processing**: Utilizes Intel XPU streams for efficient parallel operations
+- **Mixed Precision**: Leverages Intel XPU's half-precision capabilities for better performance
+- **Distributed Computing**: Compatible with multi-node Intel XPU setups
+
+**Key Features:**
+- All existing FlexLLMGen capabilities work with Intel XPU (compression, offloading, batch processing)
+- Optimized memory transfers between CPU, Intel XPU, and disk
+- Native Intel Extension for PyTorch (IPEX) integration
+- Performance comparable to CUDA GPUs for large language model inference
+
 ----------
 
 This project was made possible thanks to a collaboration with
@@ -45,6 +61,7 @@ This project was made possible thanks to a collaboration with
 - [Installation](#installation)
 - [Usage and Examples](#usage-and-examples)
   - [Get Started with a Single GPU](#get-started-with-a-single-gpu)
+  - [Intel XPU Support](#intel-xpu-support)
   - [Run HELM Benchmark with FlexLLMGen](#run-helm-benchmark-with-flexllmgen)
   - [Run Data Wrangling Tasks with FlexLLMGen](#run-data-wrangling-tasks-with-flexllmgen)
   - [Scaling to Distributed GPUs](#scaling-to-distributed-gpus)
@@ -57,10 +74,17 @@ This project was made possible thanks to a collaboration with
 ## Installation
 Requirements:  
  - PyTorch >= 1.12 [(Help)](https://pytorch.org/get-started/locally/)
+ - For Intel XPU support: Intel Extension for PyTorch (IPEX)
 
 ### Method 1: With pip
 ```
 pip install flexllmgen
+```
+
+#### Intel XPU Support
+For Intel XPU (GPU) acceleration, install Intel Extension for PyTorch:
+```
+pip install intel-extension-for-pytorch
 ```
 
 ### Method 2: From source
@@ -90,6 +114,19 @@ The exact meaning of this argument can be found [here](https://github.com/FMInfe
 ```
 python3 -m flexllmgen.flex_opt --model facebook/opt-30b --percent 0 100 100 0 100 0
 ```
+
+#### Intel XPU Support
+FlexLLMGen supports Intel XPU (GPU) devices for accelerated inference. The implementation automatically detects and utilizes Intel XPU when available:
+
+```
+# Run with Intel XPU support (automatically detected)
+python3 -m flexllmgen.flex_opt --model facebook/opt-6.7b --gpu-batch-size 4
+
+# Run OPT-30B with Intel XPU and CPU offloading
+python3 -m flexllmgen.flex_opt --model facebook/opt-30b --percent 0 100 100 0 100 0 --gpu-batch-size 4
+```
+
+Note: Intel XPU support requires Intel Extension for PyTorch (IPEX) to be installed.
 
 #### OPT-175B
 To run OPT-175B, you need to download the weights from [metaseq](https://github.com/facebookresearch/metaseq/tree/main/projects/OPT) and convert the weights into Alpa [format](https://alpa.ai/tutorials/opt_serving.html#convert-opt-175b-weights-into-alpa-formats).
@@ -151,6 +188,11 @@ python3 -m flexllmgen.apps.completion --model facebook/opt-30b --percent 0 100 1
 python3 -m flexllmgen.apps.completion --model facebook/opt-iml-max-30b --percent 0 100 100 0 100 0
 ```
 
+```
+# Complete with Intel XPU acceleration (automatically detected)
+python3 -m flexllmgen.apps.completion --model facebook/opt-6.7b --gpu-batch-size 4
+```
+
 ### Frequently Asked Questions
 
 #### How to set the offloading strategy and `--percent`?
@@ -168,6 +210,14 @@ They save more memory but run slower.
 - Enable weight compression by adding `--compress-weight`. This can reduce the weight memory usage by around 70%.
 - Offload all weights to disk by using `--percent 0 0 100 0 100 0`. This requires very little CPU and GPU memory.
 
+#### How to use Intel XPU?
+FlexLLMGen automatically detects Intel XPU devices when Intel Extension for PyTorch (IPEX) is installed. To use Intel XPU:
+
+1. Install Intel Extension for PyTorch: `pip install intel-extension-for-pytorch`
+2. Run FlexLLMGen normally - Intel XPU will be automatically detected and used
+3. All existing command-line arguments work the same with Intel XPU
+4. Memory offloading strategies (`--percent`) work identically with Intel XPU devices
+
 ## Performance Results
 ### Generation Throughput (token/s)
 The corresponding effective batch sizes and lowest offloading devices are in parentheses. Please see [here](benchmark/batch_size_table.md) for more details.
@@ -182,6 +232,7 @@ The corresponding effective batch sizes and lowest offloading devices are in par
 - Hardware: an NVIDIA T4 (16GB) instance on GCP with 208GB of DRAM and 1.5TB of SSD.  
 - Workload: input sequence length = 512, output sequence length = 32. The batch size is tuned to **a large value** that maximizes the generation throughput for each system.
 - Metric: generation throughput (token/s) = number of the generated tokens / (time for processing prompts + time for generation).  
+- **Intel XPU Support**: FlexLLMGen now supports Intel XPU devices with similar performance characteristics. Intel XPU performance varies by model and memory configuration.
 
 How to [reproduce](benchmark/flexllmgen).
 
@@ -210,5 +261,6 @@ We plan to work on the following features.
 - [ ] Optimize the performance for multiple GPUs on the same machine
 - [ ] Support more models (BLOOM, CodeGen, GLM)
 - [X] Release the cost model and policy optimizer
+- [X] Intel XPU Support
 - [ ] Macbook Support (M1 and M2)
 - [ ] AMD Support
